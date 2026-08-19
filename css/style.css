@@ -93,3 +93,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei
 .map-add{display:grid;grid-template-columns:1.2fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:14px;}
 .map-add input{padding:7px 9px;border:1px solid var(--g300);border-radius:var(--rs);font-size:12px;font-family:inherit;background:#fff;}
 @media(max-width:768px){.sb{display:none;}.ct{padding:14px;}.sts{grid-template-columns:repeat(2,1fr);}.map-add{grid-template-columns:1fr;}}
+/* 上传前必须先设置保存路径 */
+#upNeedPath{display:none;background:var(--wb);color:#8a5a16;border:1px solid #e7c878;border-left:4px solid var(--wr);border-radius:var(--rs);padding:12px 14px;font-size:13px;font-weight:600;margin-bottom:12px;}
+#uOk{display:none;background:var(--ob);color:#1f5c3f;border:1px solid #8fd6ab;border-left:4px solid var(--ok);border-radius:var(--rs);padding:13px 15px;font-size:13.5px;font-weight:700;margin-top:12px;}
+#saveCardUp.hl{outline:3px solid var(--er);outline-offset:2px;animation:cardPulse 1s ease-in-out 2;}
+@keyframes cardPulse{0%,100%{box-shadow:0 0 0 0 rgba(207,91,78,0);}50%{box-shadow:0 0 0 7px rgba(207,91,78,.18);}}

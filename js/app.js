@@ -44,9 +44,14 @@
       $('pgT').textContent = { files: '文件管理', upload: '上传文件', map: '映射管理' }[b.dataset.v] || '';
       if (b.dataset.v === 'map') loadMappingTable();
       if (b.dataset.v === 'files') renderFiles();
+      if (b.dataset.v === 'upload') renderSavePath();
     };
   });
-  $('gbUp').onclick = () => { document.querySelector('.sbi[data-v="upload"]').click(); $('fInput').click(); };
+  $('gbUp').onclick = () => {
+    document.querySelector('.sbi[data-v="upload"]').click();
+    if (!saveDirHandle && isFSA()) { needPath(); return; }
+    $('fInput').click();
+  };
 
   // ---------------- 设置 ----------------
   $('suGo').onclick = async () => {
@@ -82,6 +87,8 @@
     try {
       const h = await window.showDirectoryPicker({ mode: 'readwrite' });
       saveDirHandle = h; _pickTried = true;
+      const c = $('saveCardUp'); if (c) c.classList.remove('hl');
+      hide('uErr'); hide('uOk');
       try { await Store.putSetting('saveDir', h); } catch (e) { /* 内存兜底 */ }
       logOp('✅ 已关联本机文件夹：' + h.name + '（上传原文件与生成的报表将自动保存到这里）');
     } catch (e) {
@@ -100,6 +107,7 @@
     if ($('dirBadgeUp')) $('dirBadgeUp').textContent = badge;
     const badgeSu = saveDirHandle ? '✅ 已设置' : '⚠️ 未设置';
     if ($('suDirBadge')) $('suDirBadge').textContent = badgeSu;
+    if ($('upNeedPath')) $('upNeedPath').style.display = (!saveDirHandle && isFSA()) ? 'block' : 'none';
   }
   function syncDirInfo() { renderSavePath(); }
   function logOp(m) { const e = $('opLog'); if (e) e.textContent = m; }
@@ -114,25 +122,27 @@
   }
 
   // ---------------- 上传 ----------------
+  function needPath() {
+    const c = $('saveCardUp'); if (c) c.classList.add('hl');
+    const e = $('uErr'); if (e) { e.textContent = '⚠️ 上传前必须先设置「保存路径」。请点击上方「📂 设置保存文件夹」选择本机目录，设置后即可上传并把文件自动存入该路径。'; show('uErr'); }
+  }
   const uz = $('uzone');
   if (uz) {
-    uz.onclick = () => $('fInput').click();
+    uz.onclick = () => {
+      if (!saveDirHandle && isFSA()) { needPath(); return; }
+      $('fInput').click();
+    };
     ['dragenter', 'dragover'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); uz.classList.add('drag'); }));
     ['dragleave', 'drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); uz.classList.remove('drag'); }));
     uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) doUpload(f); });
   }
   if ($('fInput')) $('fInput').onchange = e => { if (e.target.files[0]) doUpload(e.target.files[0]); };
 
-  let _skipAutoPick = false;
   async function doUpload(file) {
-    hide('uErr'); hide('rcard'); hide('mcard'); hide('ccard'); $('anMsg').textContent = '';
+    hide('uErr'); hide('uOk'); hide('rcard'); hide('mcard'); hide('ccard'); $('anMsg').textContent = '';
     if (!saveDirHandle) {
-      if (isFSA() && !_skipAutoPick) {
-        await pickDir();
-        if (!saveDirHandle) _skipAutoPick = true; // 用户取消过，后续不再自动弹窗
-      } else if (!isFSA()) {
-        logOp('提示：当前环境不支持「直接写入本机文件夹」，处理后将以「下载」方式保存，请在弹窗中选择位置。');
-      }
+      if (isFSA()) { needPath(); return; }
+      const e = $('uErr'); if (e) { e.textContent = 'ℹ️ 当前浏览器不支持「设置保存路径」（请改用 Chrome / Edge）。文件将以「下载」方式保存，请在弹窗中选择本机位置。'; show('uErr'); }
     }
     try {
       const buf = await file.arrayBuffer();
@@ -148,6 +158,8 @@
       show('rcard');
       S.map = Calc.guessMap(S.headers); buildMapGrid('mGrid', S.map); show('mcard');
       await Store.putFile({ id: S.fid, name: file.name, project: S.projectName, province: S.province, city: S.city, bank: bank, uploadTime: Date.now(), rowCount: rows.length, status: 'raw', rawData: buf, headers: S.headers, map: S.map });
+      const ok = $('uOk'); if (ok) { ok.textContent = '✅ 上传成功：' + file.name + '（' + rows.length + ' 行）' + (saveDirHandle ? (' · 已保存到文件夹「' + saveDirHandle.name + '」') : ' · 已触发下载'); show('uOk'); }
+      const rc = $('rcard'); if (rc && rc.scrollIntoView) rc.scrollIntoView({ behavior: 'smooth', block: 'start' });
       document.querySelector('.sbi[data-v="upload"]').click(); show('v-up');
     } catch (err) { $('uErr').textContent = '解析失败：' + err.message; show('uErr'); }
   }

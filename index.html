@@ -73,11 +73,13 @@
             <span class="note" style="margin:0;">设置后，上传的原文件与生成的「清洗表 / 利润表 / 看板」都会自动写入该文件夹（Chrome / Edge 支持）。未设置则处理后以「下载」方式保存。</span>
           </div>
         </div></div>
+        <div id="upNeedPath">⚠️ 上传前请先设置「保存路径」：点击上方「📂 设置保存文件夹」选择本机目录后，才能上传并把文件自动存入该路径。</div>
 
         <div class="cd"><div class="cd-b">
           <div class="uz" id="uzone"><div class="ui">📥</div><div class="ut">拖拽 Excel 文件到这里</div><div class="ud">支持 .xlsx / .xls · 或点击选择文件 · 数据在你的电脑上读取，不会上传到任何服务器</div></div>
           <input type="file" id="fInput" accept=".xlsx,.xls" class="hid" />
-          <div id="uErr" style="color:var(--er);font-size:12.5px;display:none;"></div>
+          <div id="uErr" class="hid" style="color:var(--er);font-size:12.5px;"></div>
+          <div id="uOk" class="hid"></div>
         </div></div>
 
         <div class="cd hid" id="rcard"><div class="cd-h"><h3>📍 归属信息（用于省/市分类筛选）</h3></div><div class="cd-b">
