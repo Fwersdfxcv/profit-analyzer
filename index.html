@@ -58,8 +58,16 @@
         <div class="cd">
           <div class="cd-h"><h3>📋 文件列表</h3><span style="font-size:11px;color:var(--g400);" id="fcLab"></span></div>
           <div class="cd-b" style="padding:0;">
+            <div class="tabs" id="fTabs" style="padding:8px 12px 0;">
+              <button class="tab on" data-fm="browser">🗄️ 浏览器记录 <span class="cnt" id="cntBr">0</span></button>
+              <button class="tab" data-fm="local">📂 本机文件夹 <span class="cnt" id="cntLc">0</span></button>
+              <button class="tab" data-fm="all">📑 全部 <span class="cnt" id="cntAl">0</span></button>
+              <button class="btn bg bsm" id="refreshLocal" style="margin-left:auto;">🔄 重新扫描</button>
+            </div>
+            <table class="dt hid" id="fTblLocal"><thead><tr><th>文件名</th><th>类型</th><th>银行/项目</th><th>时间标签</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead><tbody id="fBodyLocal"></tbody></table>
             <table class="dt" id="fTbl"><thead><tr><th>文件名</th><th>省份</th><th>城市</th><th>银行</th><th>上传时间</th><th>记录数</th><th>状态</th><th>操作</th></tr></thead><tbody id="fBody"></tbody></table>
             <div class="empty hid" id="empF"><div class="ei">📂</div><p>还没有上传任何文件</p><p class="ed">点击右上角「上传文件」或切换到「上传」页面</p></div>
+            <div class="empty hid" id="empL"><div class="ei">📁</div><p>保存路径下还没有文件</p><p class="ed">请先在「上传」页设置保存路径，然后上传一个 Excel</p></div>
           </div>
         </div>
       </div>

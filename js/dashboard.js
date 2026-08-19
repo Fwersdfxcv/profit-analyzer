@@ -85,8 +85,9 @@ function money(v){return '¥'+Number(v).toLocaleString('zh-CN',{maximumFractionD
 </body></html>`;
   }
 
-  function openDashboard(payload, echartsUrl) {
+  function openDashboard(payload, echartsUrl, onReady) {
     const html = buildHTML(payload, echartsUrl);
+    if (typeof onReady === 'function') { try { onReady(html); } catch (e) {} }
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');

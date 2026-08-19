@@ -98,3 +98,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei
 #uOk{display:none;background:var(--ob);color:#1f5c3f;border:1px solid #8fd6ab;border-left:4px solid var(--ok);border-radius:var(--rs);padding:13px 15px;font-size:13.5px;font-weight:700;margin-top:12px;}
 #saveCardUp.hl{outline:3px solid var(--er);outline-offset:2px;animation:cardPulse 1s ease-in-out 2;}
 @keyframes cardPulse{0%,100%{box-shadow:0 0 0 0 rgba(207,91,78,0);}50%{box-shadow:0 0 0 7px rgba(207,91,78,.18);}}
+/* 文件管理 tab */
+.tabs{display:flex;align-items:center;gap:6px;background:#fafaf7;border-bottom:1px solid var(--g200);}
+.tab{padding:9px 14px;border:none;background:none;font-size:12.5px;color:var(--g600);border-bottom:2px solid transparent;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
+.tab:hover{color:var(--g800);}
+.tab.on{color:var(--ok);border-bottom-color:var(--ok);}
+.tab .cnt{display:inline-block;background:var(--g200);color:var(--g700);font-size:10.5px;padding:1px 7px;border-radius:10px;font-weight:600;}
+.tab.on .cnt{background:var(--ob);color:var(--ok);}

@@ -22,7 +22,7 @@
     await Store.seedMapping();
     await refreshMapCache();
     loadFirstLibs();
-    await initDirHandle();
+    await _wrappedInitDirHandle();
     const s = await Store.getSetting('project');
     if (s && s.value) { S.projectName = s.value; showMain(); }
     else { hide('v-fl'); hide('v-up'); show('v-su'); }
@@ -89,6 +89,7 @@
       const c = $('saveCardUp'); if (c) c.classList.remove('hl');
       hide('uErr'); hide('uOk');
       try { await Store.putSetting('saveDir', h); } catch (e) { /* 内存兜底 */ }
+      await loadFromDir(); renderFiles();
       logOp('✅ 已关联本机文件夹：' + h.name + '（上传原文件与生成的报表将自动保存到这里）');
     } catch (e) {
       if (e.name === 'AbortError') { /* 用户取消，忽略 */ }
@@ -110,14 +111,89 @@
   }
   function syncDirInfo() { renderSavePath(); }
   function logOp(m) { const e = $('opLog'); if (e) e.textContent = m; }
-  async function saveToDir(filename, blob) {
+  // 取得（必要时创建）子目录的 handle；路径按 `/` 拆分
+  async function getDirHandleByPath(parts) {
+    let h = saveDirHandle;
+    for (const seg of parts) {
+      if (!seg) continue;
+      h = await h.getDirectoryHandle(seg, { create: true });
+    }
+    return h;
+  }
+  // 保存到指定子路径
+  async function saveToPath(parts, filename, blob) {
     if (saveDirHandle) {
-      try { const fh = await saveDirHandle.getFileHandle(filename, { create: true }); const w = await fh.createWritable(); await w.write(blob); await w.close(); return '已保存到本机文件夹 [' + saveDirHandle.name + '] / ' + filename; }
-      catch (e) { return '自动保存失败（' + e.message + '），请改用下载按钮。'; }
+      try {
+        const dir = await getDirHandleByPath(parts);
+        const fh = await dir.getFileHandle(filename, { create: true });
+        const w = await fh.createWritable(); await w.write(blob); await w.close();
+        const path = (parts.concat([filename])).join('/');
+        return '已保存到 [' + saveDirHandle.name + '] / ' + path;
+      } catch (e) { return '自动保存失败（' + e.message + '），请改用下载按钮。'; }
     }
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    return '已触发下载：' + filename + '（请在弹窗中选择本机保存路径）';
+    return '已触发下载：' + filename + '（未设置保存路径）';
+  }
+  // 按银行/类型分层保存：积分明细 / 利润表 / 利润看板
+  async function saveToDirTyped(kind, filename, blob) {
+    const bank = S.bank || S.projectName || '未命名';
+    const tag = S.fileTag || '通用';
+    const folder = bank + '_' + tag;
+    const kindFolder = ({ raw: '积分明细', clean: '积分明细', profit: '利润表', dashboard: '利润看板' })[kind] || '其他';
+    return saveToPath([folder, kindFolder], filename, blob);
+  }
+  // 兼容旧调用：上传原文件用此（kind=raw，自动归入 积分明细/）
+  async function saveToDir(filename, blob) {
+    if (!S.fileTag) S.fileTag = Calc.deriveTag((S.fileName || filename || '').replace(/\.[^.]+$/, ''));
+    return saveToDirTyped('raw', filename, blob);
+  }
+
+  // ---------------- 自动扫描保存路径（递归） ----------------
+  let localFilesCache = []; // [{name, path, size, lastModified, kind, bank, tag}]
+  async function scanDir(dirHandle, baseParts) {
+    const out = [];
+    for await (const [name, h] of dirHandle.entries()) {
+      const parts = baseParts.concat([name]);
+      if (h.kind === 'directory') {
+        out.push({ _isDir: true, name, path: parts.join('/'), _handle: h });
+        const sub = await scanDir(h, parts); out.push(...sub);
+      } else if (h.kind === 'file') {
+        try {
+          const f = await h.getFile();
+          out.push({ name, path: parts.join('/'), size: f.size, lastModified: f.lastModified, _handle: h });
+        } catch (e) { /* 跳过无法读取的文件 */ }
+      }
+    }
+    return out;
+  }
+  // 将扫描结果按路径推断 bank/tag/kind（路径如 <bank>_<tag>/<kindFolder>/<filename>）
+  function classifyLocal(files) {
+    return files.filter(f => !f._isDir).map(f => {
+      const seg = f.path.split('/');
+      const bankTag = seg[0] || '';
+      const kindFolder = seg[1] || '';
+      const kind = ({ '积分明细': 'raw', '利润表': 'profit', '利润看板': 'dashboard' })[kindFolder] || 'other';
+      const m = bankTag.match(/^(.+)_([^_]+)$/);
+      const bank = m ? m[1] : bankTag;
+      const tag = m ? m[2] : '';
+      return { ...f, bank, tag, kind };
+    });
+  }
+  async function loadFromDir() {
+    if (!saveDirHandle) { localFilesCache = []; return; }
+    try {
+      const all = await scanDir(saveDirHandle, []);
+      localFilesCache = classifyLocal(all);
+      logOp('📂 已扫描保存路径：共发现 ' + localFilesCache.length + ' 个文件（' + saveDirHandle.name + '）');
+    } catch (e) {
+      logOp('⚠️ 扫描保存路径失败：' + e.message);
+    }
+  }
+  // 在 initDirHandle 之后立即扫描一次
+  async function _wrappedInitDirHandle() {
+    await initDirHandle();
+    await loadFromDir();
   }
 
   // ---------------- 上传 ----------------
@@ -150,7 +226,9 @@
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { defval: null });
       if (!rows.length) throw new Error('空文件或无可识别的表头');
       S.headers = Object.keys(rows[0]); S.rows = rows; S.fid = rid(); S.fileName = file.name;
+      S.fileTag = Calc.deriveTag((S.fileName || '').replace(/\.[^.]+$/, ''));
       await saveToDir(file.name, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      await loadFromDir();
       const bank = suggestBank(file.name); $('rBank').value = bank;
       await applyMapping(bank);
       S.bank = bank; S.province = $('rProv').value.trim(); S.city = $('rCity').value.trim();
@@ -255,26 +333,33 @@
     const pblob = Profit.buildProfitBlob(pwb);
     const cwb = Profit.buildCleanWB(S.groups, S.order, S.headers);
     const cblob = Profit.buildCleanBlob(cwb);
-    const tag = Calc.deriveTag((S.fileName || '').replace(/\.[^.]+$/, ''));
+    const tag = S.fileTag = Calc.deriveTag((S.fileName || '').replace(/\.[^.]+$/, ''));
     const prefix = S.bank || S.projectName || '利润分析';
-    await saveToDir(prefix + '项目数据统计口径参考_' + tag + '.xlsx', pblob);
-    await saveToDir(prefix + '_' + tag + '_兑换明细_已清洗.xlsx', cblob);
+    // 利润表 + 清洗表：按银行/类型分层
+    await saveToDirTyped('profit', prefix + '项目数据统计口径参考_' + tag + '.xlsx', pblob);
+    await saveToDirTyped('clean', prefix + '_' + tag + '_兑换明细_已清洗.xlsx', cblob);
+    await loadFromDir();
     if (S.fid) { const fi = await Store.getFile(S.fid); if (fi) { fi.status = 'analyzed'; fi.products = products; fi.daily = daily; fi.kpis = kpis; fi.stats = S.stats; await Store.putFile(fi); } }
-    Dashboard.openDashboard(payload, ECHARTS_URL);
-    $('anMsg').textContent = '✅ 已生成利润表与看板' + (zeroPaper ? '（纸书项目税率已按「全员阅读平台」置 0）' : '') + '，并已写入保存路径。';
+    Dashboard.openDashboard(payload, ECHARTS_URL, async (dashHtml) => {
+      // 利润看板 html 同时保存到 利润看板/ 子目录
+      await saveToDirTyped('dashboard', prefix + '_' + tag + '_利润看板.html', new Blob([dashHtml], { type: 'text/html;charset=utf-8' }));
+      logOp('✅ 利润看板已保存到 利润看板/');
+    });
+    $('anMsg').textContent = '✅ 已生成利润表与看板' + (zeroPaper ? '（纸书项目税率已按「全员阅读平台」置 0）' : '') + '，并已按 积分明细/利润表/利润看板 分类写入保存路径。';
     renderFiles();
   }
   $('dlCln').onclick = () => {
     if (!S.cleaned || !S.cleaned.length) { alert('请先清洗数据'); return; }
     const cwb = Profit.buildCleanWB(S.groups, S.order, S.headers);
-    saveToDir((S.bank || '利润分析') + '_兑换明细_已清洗.xlsx', Profit.buildCleanBlob(cwb));
+    saveToDirTyped('clean', (S.bank || '利润分析') + '_兑换明细_已清洗.xlsx', Profit.buildCleanBlob(cwb));
   };
 
   // ---------------- 文件列表 ----------------
+  let currentFMode = 'browser';
   async function renderFiles() {
-    let files = await Store.getAllFiles();
+    const allFiles = await Store.getAllFiles();
     const fp = $('fProv').value, fc = $('fCity').value, fb = $('fBank').value, fs = $('fSts').value;
-    if (files) files = files.filter(f => {
+    let brFiles = (allFiles || []).filter(f => {
       if (fp && f.province !== fp) return false;
       if (fc && f.city !== fc) return false;
       if (fb && f.bank !== fb) return false;
@@ -282,19 +367,53 @@
       return true;
     });
     const tb = $('fBody'), emp = $('empF');
-    if (!files || !files.length) { tb.innerHTML = ''; show(emp); $('fcLab').textContent = ''; updStats(await Store.getAllFiles()); return; }
+    if (!brFiles.length) { tb.innerHTML = ''; show(emp); } else {
+      hide(emp);
+      tb.innerHTML = brFiles.map(f => {
+        const dt = new Date(f.uploadTime).toLocaleString('zh-CN');
+        return '<tr data-id="' + f.id + '"><td><span class="fn" title="' + esc(f.name) + '">' + esc(f.name) + '</span><br><span class="fm">' + esc(f.project || '') + '</span></td>' +
+          '<td>' + (f.province ? '<span class="rt rt-p">' + esc(f.province) + '</span>' : '—') + '</td>' +
+          '<td>' + (f.city ? esc(f.city) : '—') + '</td>' +
+          '<td>' + (f.bank ? '<span class="rt rt-b">' + esc(f.bank) + '</span>' : '—') + '</td>' +
+          '<td style="font-size:11px;color:var(--g500);">' + dt + '</td><td>' + (f.rowCount || '—') + '</td><td>' + sbBadge(f.status) + '</td>' +
+          '<td><div style="display:flex;gap:4px;flex-wrap:wrap;">' + bActs(f) + '</div></td></tr>';
+      }).join('');
+    }
+    $('fcLab').textContent = '浏览器记录：' + brFiles.length + ' 个 · 本机文件：' + localFilesCache.length + ' 个';
+    updStats(allFiles || []);
+    // 本机文件表
+    renderLocalFiles();
+    // tab 切换
+    document.querySelectorAll('#fTabs .tab').forEach(b => b.classList.toggle('on', b.dataset.fm === currentFMode));
+    const showBrowser = (currentFMode === 'browser' || currentFMode === 'all');
+    const showLocal = (currentFMode === 'local' || currentFMode === 'all');
+    $('fTbl').classList.toggle('hid', !showBrowser || currentFMode === 'local');
+    $('fTblLocal').classList.toggle('hid', !showLocal);
+    $('cntBr').textContent = brFiles.length;
+    $('cntLc').textContent = localFilesCache.length;
+    $('cntAl').textContent = brFiles.length + localFilesCache.length;
+  }
+  function renderLocalFiles() {
+    const tb = $('fBodyLocal'), emp = $('empL');
+    const rows = localFilesCache.slice().sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+    if (!rows.length) { tb.innerHTML = ''; show(emp); return; }
     hide(emp);
-    tb.innerHTML = files.map(f => {
-      const dt = new Date(f.uploadTime).toLocaleString('zh-CN');
-      return '<tr data-id="' + f.id + '"><td><span class="fn" title="' + esc(f.name) + '">' + esc(f.name) + '</span><br><span class="fm">' + esc(f.project || '') + '</span></td>' +
-        '<td>' + (f.province ? '<span class="rt rt-p">' + esc(f.province) + '</span>' : '—') + '</td>' +
-        '<td>' + (f.city ? esc(f.city) : '—') + '</td>' +
-        '<td>' + (f.bank ? '<span class="rt rt-b">' + esc(f.bank) + '</span>' : '—') + '</td>' +
-        '<td style="font-size:11px;color:var(--g500);">' + dt + '</td><td>' + (f.rowCount || '—') + '</td><td>' + sbBadge(f.status) + '</td>' +
-        '<td><div style="display:flex;gap:4px;flex-wrap:wrap;">' + bActs(f) + '</div></td></tr>';
+    tb.innerHTML = rows.map(f => {
+      const kind = ({ raw: '积分明细', profit: '利润表', dashboard: '利润看板', other: '其他' })[f.kind] || f.kind;
+      const dt = f.lastModified ? new Date(f.lastModified).toLocaleString('zh-CN') : '—';
+      const sz = f.size > 1024 * 1024 ? (f.size / 1024 / 1024).toFixed(2) + ' MB' : (f.size / 1024).toFixed(1) + ' KB';
+      const path = esc(f.path);
+      return '<tr data-path="' + path + '"><td><span class="fn" title="' + path + '">' + esc(f.name) + '</span><br><span class="fm">' + path + '</span></td>' +
+        '<td><span class="rt rt-p">' + esc(kind) + '</span></td>' +
+        '<td>' + (f.bank ? '<span class="rt rt-b">' + esc(f.bank) + '</span>' : '—') + '<br><span class="fm">' + esc(f.tag || '') + '</span></td>' +
+        '<td style="font-size:11px;color:var(--g500);">' + esc(f.tag || '') + '</td>' +
+        '<td style="font-size:11px;color:var(--g500);">' + sz + '</td>' +
+        '<td style="font-size:11px;color:var(--g500);">' + dt + '</td>' +
+        '<td><div style="display:flex;gap:4px;flex-wrap:wrap;">' +
+        '<button class="btn bg bsm" onclick="viewLocalFile(\'' + path + '\')">打开</button>' +
+        '<button class="btn bg bsm" style="color:var(--er);border-color:#fecaca;" onclick="delLocalFile(\'' + path + '\')">删除</button>' +
+        '</div></td></tr>';
     }).join('');
-    $('fcLab').textContent = '共 ' + files.length + ' 个文件';
-    updStats(await Store.getAllFiles());
   }
   function sbBadge(s) { if (s === 'analyzed') return '<span class="badge b-done">已分析</span>'; if (s === 'cleaned') return '<span class="badge b-ok">已清洗</span>'; if (s === 'error') return '<span class="badge b-bad">异常</span>'; return '<span class="badge b-raw">待处理</span>'; }
   function bActs(f) {
@@ -305,6 +424,32 @@
     h += '<button class="btn bg bsm" style="color:var(--er);border-color:#fecaca;" onclick="delFile(\'' + f.id + '\')">删除</button>';
     return h;
   }
+  // tab 切换
+  document.querySelectorAll('#fTabs .tab').forEach(b => { b.onclick = () => { currentFMode = b.dataset.fm; renderFiles(); }; });
+  // 刷新本机文件
+  if ($('refreshLocal')) $('refreshLocal').onclick = async () => {
+    if (!saveDirHandle) { alert('请先设置保存路径'); return; }
+    await loadFromDir(); renderFiles();
+    alert('✅ 已重新扫描保存路径，共发现 ' + localFilesCache.length + ' 个文件');
+  };
+  // 打开本机文件
+  window.viewLocalFile = async function (path) {
+    const item = localFilesCache.find(f => f.path === path);
+    if (!item || !item._handle) { alert('找不到文件句柄，请重新扫描'); return; }
+    try {
+      const f = await item._handle.getFile();
+      const url = URL.createObjectURL(f);
+      window.open(url, '_blank');
+    } catch (e) { alert('打开失败：' + e.message); }
+  };
+  // 删除本机文件
+  window.delLocalFile = async function (path) {
+    const item = localFilesCache.find(f => f.path === path);
+    if (!item || !item._handle) { alert('找不到文件句柄'); return; }
+    if (!confirm('确定删除本机文件？\n\n路径：' + path)) return;
+    try { await item._handle.remove(); await loadFromDir(); renderFiles(); alert('✅ 已删除本机文件'); }
+    catch (e) { alert('删除失败：' + e.message); }
+  };
   function updStats(a) { if (!a) a = []; $('sTot').textContent = a.length; $('sAn').textContent = a.filter(f => f.status === 'analyzed').length; $('sCl').textContent = a.filter(f => f.status === 'cleaned' || f.status === 'analyzed').length; }
   async function buildFilters() {
     const files = await Store.getAllFiles();
