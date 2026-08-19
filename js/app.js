@@ -25,7 +25,7 @@
     await _wrappedInitDirHandle();
     const s = await Store.getSetting('project');
     if (s && s.value) { S.projectName = s.value; showMain(); }
-    else { hide('v-fl'); hide('v-up'); show('v-su'); }
+    else { hide('v-fl'); hide('v-sum'); show('v-su'); }
   }
 
   function loadFirstLibs() {
@@ -39,18 +39,13 @@
     b.onclick = () => {
       document.querySelectorAll('.sbi').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
-      ['files', 'upload'].forEach(v => hide('v-' + v));
+      ['files', 'summary'].forEach(v => hide('v-' + v));
       show('v-' + b.dataset.v);
-      $('pgT').textContent = { files: '文件管理', upload: '上传文件' }[b.dataset.v] || '';
-      if (b.dataset.v === 'files') renderFiles();
-      if (b.dataset.v === 'upload') { renderSavePath(); loadMappingTable(); }
+      $('pgT').textContent = { files: '文件管理', summary: '全局聚合' }[b.dataset.v] || '';
+      if (b.dataset.v === 'files') { renderFiles(); renderSavePath(); }
+      if (b.dataset.v === 'summary') renderSummary();
     };
   });
-  $('gbUp').onclick = () => {
-    document.querySelector('.sbi[data-v="upload"]').click();
-    if (!saveDirHandle && isFSA()) { needPath(); return; }
-    $('fInput').click();
-  };
 
   // ---------------- 设置 ----------------
   $('suGo').onclick = async () => {
@@ -227,21 +222,31 @@
       if (!rows.length) throw new Error('空文件或无可识别的表头');
       S.headers = Object.keys(rows[0]); S.rows = rows; S.fid = rid(); S.fileName = file.name;
       S.fileTag = Calc.deriveTag((S.fileName || '').replace(/\.[^.]+$/, ''));
-      await saveToDir(file.name, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-      await loadFromDir();
+      // 1) 先解析银行归属（决定保存子目录）
       const bank = suggestBank(file.name); $('rBank').value = bank;
       await applyMapping(bank);
       S.bank = bank; S.province = $('rProv').value.trim(); S.city = $('rCity').value.trim();
+      // 2) 再保存原文件（按银行/类型分层）
+      const saveMsg = await saveToDir(file.name, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      // 3) 存储到 IndexedDB（失败不阻断主流程）
+      let storeMsg = '';
+      try { await Store.putFile({ id: S.fid, name: file.name, project: S.projectName, province: S.province, city: S.city, bank: bank, uploadTime: Date.now(), rowCount: rows.length, status: 'raw', rawData: buf, headers: S.headers, map: S.map }); }
+      catch (e) { storeMsg = '\n⚠️ 浏览器内存储失败（已写入本机文件夹）：' + e.message; }
+      // 4) 展示归属与列映射
       show('rcard');
       S.map = Calc.guessMap(S.headers); buildMapGrid('mGrid', S.map); show('mcard');
-      await Store.putFile({ id: S.fid, name: file.name, project: S.projectName, province: S.province, city: S.city, bank: bank, uploadTime: Date.now(), rowCount: rows.length, status: 'raw', rawData: buf, headers: S.headers, map: S.map });
-      const ok = $('uOk'); if (ok) { ok.textContent = '✅ 上传成功：' + file.name + '（' + rows.length + ' 行）' + (saveDirHandle ? (' · 已保存到文件夹「' + saveDirHandle.name + '」') : ' · 已触发下载'); show('uOk'); }
+      const ok = $('uOk'); if (ok) { ok.textContent = '✅ 上传成功：' + file.name + '（' + rows.length + ' 行）· 已保存到子目录：「' + (S.bank || '未命名') + '_' + S.fileTag + '/积分明细/」' + storeMsg; show('uOk'); }
       const rc = $('rcard'); if (rc && rc.scrollIntoView) rc.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      // 刷新文件管理列表 + 弹窗确认 + 跳转到文件管理页
+      // 5) 刷新本机文件 + 文件管理列表
+      try { await loadFromDir(); } catch (e) {}
       await renderFiles(); await buildFilters();
-      alert('✅ 上传成功\n\n文件：' + file.name + '\n记录数：' + rows.length + (saveDirHandle ? ('\n已保存到文件夹：「' + saveDirHandle.name + '」') : '\n（未设置保存路径，已触发浏览器下载）'));
+      alert('✅ 上传成功\n\n文件：' + file.name + '\n记录数：' + rows.length + (saveDirHandle ? ('\n已写入子目录：' + (S.bank || '未命名') + '_' + S.fileTag + '/积分明细/') : '\n（未设置保存路径，已触发浏览器下载）') + storeMsg);
       document.querySelector('.sbi[data-v="files"]').click();
-    } catch (err) { $('uErr').textContent = '解析失败：' + err.message; show('uErr'); }
+    } catch (err) {
+      console.error('上传错误:', err);
+      const msg = (err && err.message) ? err.message : String(err);
+      const e = $('uErr'); if (e) { e.textContent = '❌ 上传失败：' + msg + '\n\n请检查：1) 是否为 .xlsx/.xls 格式；2) 文件是否被加密或损坏；3) 是否已在弹窗中授权文件夹访问权限。'; show('uErr'); }
+    }
   }
 
   // 银行输入 → 自动匹配省/市
@@ -354,7 +359,68 @@
     saveToDirTyped('clean', (S.bank || '利润分析') + '_兑换明细_已清洗.xlsx', Profit.buildCleanBlob(cwb));
   };
 
-  // ---------------- 文件列表 ----------------
+  // ---------------- 全局聚合 ----------------
+  async function renderSummary() {
+    const all = await Store.getAllFiles();
+    const analyzed = (all || []).filter(f => f.status === 'analyzed' && f.stats);
+    // 总体 KPI
+    let totOrd = 0, totRev = 0, totCost = 0, totPrf = 0;
+    const byBank = {}, byTag = {}, byType = {};
+    analyzed.forEach(f => {
+      const ord = (f.kpis && f.kpis[0]) ? f.kpis[0].v : (f.stats ? Object.values(f.stats).reduce((s, x) => s + (x.兑换单数 || 0), 0) : 0);
+      const rev = (f.stats ? Object.values(f.stats).reduce((s, x) => s + (x.兑换金额含税 || 0), 0) : 0);
+      const cost = (f.stats ? Object.values(f.stats).reduce((s, x) => s + (x.成本含税 || 0), 0) : 0);
+      const prf = rev - cost;
+      totOrd += ord; totRev += rev; totCost += cost; totPrf += prf;
+      const bk = f.bank || '未分类';
+      const bkKey = bk + '|' + (f.province || '') + '|' + (f.city || '');
+      if (!byBank[bkKey]) byBank[bkKey] = { bank: bk, province: f.province || '', city: f.city || '', files: 0, ord: 0, rev: 0, cost: 0, prf: 0 };
+      byBank[bkKey].files++; byBank[bkKey].ord += ord; byBank[bkKey].rev += rev; byBank[bkKey].cost += cost; byBank[bkKey].prf += prf;
+      const tag = Calc.deriveTag((f.name || '').replace(/\.[^.]+$/, ''));
+      if (!byTag[tag]) byTag[tag] = { tag, files: 0, ord: 0, rev: 0, cost: 0, prf: 0 };
+      byTag[tag].files++; byTag[tag].ord += ord; byTag[tag].rev += rev; byTag[tag].cost += cost; byTag[tag].prf += prf;
+      Object.keys(f.stats || {}).forEach(t => {
+        if (!byType[t]) byType[t] = { type: t, ord: 0, rev: 0, cost: 0, prf: 0 };
+        byType[t].ord += f.stats[t].兑换单数 || 0;
+        byType[t].rev += f.stats[t].兑换金额含税 || 0;
+        byType[t].cost += f.stats[t].成本含税 || 0;
+        byType[t].prf += (f.stats[t].兑换金额含税 || 0) - (f.stats[t].成本含税 || 0);
+      });
+    });
+    $('smTot').textContent = analyzed.length;
+    $('smOrd').textContent = totOrd.toLocaleString('zh-CN');
+    $('smRev').textContent = '¥' + totRev.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    $('smPrf').textContent = '¥' + totPrf.toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    const rate = totRev > 0 ? (totPrf / totRev * 100).toFixed(2) + '%' : '0%';
+    $('smRate').textContent = rate;
+    // 按银行
+    $('smByBankBody').innerHTML = Object.values(byBank).sort((a, b) => b.prf - a.prf).map(r =>
+      '<tr><td>' + esc(r.bank) + '</td><td>' + esc(r.province || '—') + '</td><td>' + esc(r.city || '—') + '</td>' +
+      '<td>' + r.files + '</td><td>' + r.ord.toLocaleString('zh-CN') + '</td>' +
+      '<td>¥' + r.rev.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>¥' + r.cost.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td style="font-weight:600;color:' + (r.prf >= 0 ? 'var(--ok)' : 'var(--er)') + ';">¥' + r.prf.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>' + (r.rev > 0 ? (r.prf / r.rev * 100).toFixed(2) + '%' : '—') + '</td></tr>'
+    ).join('') || '<tr><td colspan="9" style="color:var(--g400);text-align:center;padding:18px;">暂无已分析文件，请先在文件管理页清洗并分析文件</td></tr>';
+    // 按时间标签
+    $('smByTagBody').innerHTML = Object.values(byTag).sort((a, b) => String(b.tag).localeCompare(String(a.tag))).map(r =>
+      '<tr><td><span class="rt rt-p">' + esc(r.tag) + '</span></td><td>' + r.files + '</td><td>' + r.ord.toLocaleString('zh-CN') + '</td>' +
+      '<td>¥' + r.rev.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>¥' + r.cost.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td style="font-weight:600;color:' + (r.prf >= 0 ? 'var(--ok)' : 'var(--er)') + ';">¥' + r.prf.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>' + (r.rev > 0 ? (r.prf / r.rev * 100).toFixed(2) + '%' : '—') + '</td></tr>'
+    ).join('') || '<tr><td colspan="7" style="color:var(--g400);text-align:center;padding:18px;">暂无数据</td></tr>';
+    // 按类型
+    $('smByTypeBody').innerHTML = Object.values(byType).sort((a, b) => b.rev - a.rev).map(r =>
+      '<tr><td><span class="rt rt-b">' + esc(r.type) + '</span></td><td>' + r.ord.toLocaleString('zh-CN') + '</td>' +
+      '<td>¥' + r.rev.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>¥' + r.cost.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td style="font-weight:600;color:' + (r.prf >= 0 ? 'var(--ok)' : 'var(--er)') + ';">¥' + r.prf.toLocaleString('zh-CN', { maximumFractionDigits: 2 }) + '</td>' +
+      '<td>' + (r.rev > 0 ? (r.prf / r.rev * 100).toFixed(2) + '%' : '—') + '</td></tr>'
+    ).join('') || '<tr><td colspan="6" style="color:var(--g400);text-align:center;padding:18px;">暂无数据</td></tr>';
+  }
+
+// ---------------- 文件列表 ----------------
   let currentFMode = 'browser';
   async function renderFiles() {
     const allFiles = await Store.getAllFiles();
@@ -381,17 +447,21 @@
     }
     $('fcLab').textContent = '浏览器记录：' + brFiles.length + ' 个 · 本机文件：' + localFilesCache.length + ' 个';
     updStats(allFiles || []);
-    // 本机文件表
     renderLocalFiles();
-    // tab 切换
+    // tab + 面板切换
     document.querySelectorAll('#fTabs .tab').forEach(b => b.classList.toggle('on', b.dataset.fm === currentFMode));
-    const showBrowser = (currentFMode === 'browser' || currentFMode === 'all');
-    const showLocal = (currentFMode === 'local' || currentFMode === 'all');
-    $('fTbl').classList.toggle('hid', !showBrowser || currentFMode === 'local');
+    const isUpload = (currentFMode === 'upload');
+    const isList = !isUpload;
+    $('paneList').classList.toggle('hid', isUpload);
+    $('paneUpload').classList.toggle('hid', !isUpload);
+    const showBrowser = isList && (currentFMode === 'browser' || currentFMode === 'all');
+    const showLocal = isList && (currentFMode === 'local' || currentFMode === 'all');
+    $('fTbl').classList.toggle('hid', !showBrowser);
     $('fTblLocal').classList.toggle('hid', !showLocal);
     $('cntBr').textContent = brFiles.length;
     $('cntLc').textContent = localFilesCache.length;
     $('cntAl').textContent = brFiles.length + localFilesCache.length;
+    if (isUpload) { renderSavePath(); }
   }
   function renderLocalFiles() {
     const tb = $('fBodyLocal'), emp = $('empL');
