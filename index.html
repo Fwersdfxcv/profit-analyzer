@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>利润分析平台 · 银行商品兑换明细</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="banner" class="bn ok">⏳ 正在加载组件…</div>
+<div class="app">
+  <aside class="sb">
+    <div class="sb-hd"><h1>📊 利润分析平台</h1><p>银行商品兑换明细 · 本地处理</p></div>
+    <nav class="sb-nav">
+      <button class="sbi on" data-v="files"><span class="ic">📁</span> 文件管理</button>
+      <button class="sbi" data-v="upload"><span class="ic">📤</span> 上传文件</button>
+      <button class="sbi" data-v="map"><span class="ic">🗺️</span> 映射管理</button>
+    </nav>
+    <div class="sb-ft">数据仅存于本机浏览器与所选文件夹 · 不上传任何服务器</div>
+  </aside>
+  <main class="main">
+    <div class="tb"><h2 id="pgT">文件管理</h2><div><button class="btn bp bsm" id="gbUp">＋ 上传文件</button></div></div>
+    <div class="ct">
+
+      <!-- SETUP -->
+      <div id="v-su">
+        <div class="cd"><div class="swiz">
+          <div class="si">🏦</div><h2>欢迎使用利润分析平台</h2>
+          <p>首次使用请先设置<strong>保存路径</strong>与<strong>项目名称</strong>。上传的 Excel 原文件、清洗表、利润表、看板都会自动存入该路径。</p>
+          <div style="margin:18px 0 12px;background:var(--pb);border:1px solid var(--pl);border-radius:var(--rs);padding:14px 16px;text-align:left;">
+            <div style="font-size:12px;font-weight:600;color:var(--g700);margin-bottom:6px;">💾 保存路径 <span id="suDirBadge" class="badge b-raw">⚠️ 未设置</span></div>
+            <div id="suDirInfo" style="font-size:12px;color:var(--g600);margin-bottom:10px;">未设置 · 上传的文件与生成的报表将以「下载」方式保存</div>
+            <button class="btn bg" id="pickDirSu">📂 设置保存文件夹</button>
+          </div>
+          <input id="suName" placeholder="例如：苏州中行-2026" style="margin-top:4px;" /><button class="btn bp" id="suGo" style="padding:9px 28px;">开始使用</button>
+        </div></div>
+      </div>
+
+      <!-- FILES -->
+      <div id="v-fl" class="hid">
+        <div class="cd" id="saveCardMain"><div class="cd-h"><h3>💾 本地保存路径</h3><span class="fm" id="dirInfoMain">未设置</span></div><div class="cd-b">
+          <div class="fb" style="margin-bottom:0;">
+            <button class="btn bg bsm" id="pickDirMain">📂 选择保存文件夹</button>
+            <span class="note" style="margin:0;">设置后，上传的原文件与生成的「清洗表 / 利润表 / 看板」都会自动写入该文件夹（Chrome / Edge 支持）。未设置则仅暂存浏览器。</span>
+          </div>
+        </div></div>
+
+        <div class="sts" id="stsBar">
+          <div class="st"><div class="st-l">总文件数</div><div class="st-v" id="sTot">0</div></div>
+          <div class="st"><div class="st-l">已清洗</div><div class="st-v" id="sCl">0</div></div>
+          <div class="st"><div class="st-l">已生成看板</div><div class="st-v" id="sAn">0</div></div>
+        </div>
+        <div class="fb" id="fbar">
+          <label>省份：</label><select id="fProv"><option value="">全部</option></select>
+          <label>城市：</label><select id="fCity"><option value="">全部</option></select>
+          <label>银行：</label><select id="fBank"><option value="">全部</option></select>
+          <label>状态：</label><select id="fSts"><option value="">全部</option><option value="raw">待处理</option><option value="cleaned">已清洗</option><option value="analyzed">已分析</option></select>
+        </div>
+        <div class="cd">
+          <div class="cd-h"><h3>📋 文件列表</h3><span style="font-size:11px;color:var(--g400);" id="fcLab"></span></div>
+          <div class="cd-b" style="padding:0;">
+            <table class="dt" id="fTbl"><thead><tr><th>文件名</th><th>省份</th><th>城市</th><th>银行</th><th>上传时间</th><th>记录数</th><th>状态</th><th>操作</th></tr></thead><tbody id="fBody"></tbody></table>
+            <div class="empty hid" id="empF"><div class="ei">📂</div><p>还没有上传任何文件</p><p class="ed">点击右上角「上传文件」或切换到「上传」页面</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- UPLOAD -->
+      <div id="v-up" class="hid">
+        <div class="cd" id="saveCardUp"><div class="cd-h"><h3>💾 本地保存路径 <span id="dirBadgeUp" class="badge b-raw">⚠️</span></h3><span class="fm" id="dirInfoUp">未设置</span></div><div class="cd-b">
+          <div class="fb" style="margin-bottom:0;">
+            <button class="btn bg bsm" id="pickDirUp">📂 设置保存文件夹</button>
+            <span class="note" style="margin:0;">设置后，上传的原文件与生成的「清洗表 / 利润表 / 看板」都会自动写入该文件夹（Chrome / Edge 支持）。未设置则处理后以「下载」方式保存。</span>
+          </div>
+        </div></div>
+
+        <div class="cd"><div class="cd-b">
+          <div class="uz" id="uzone"><div class="ui">📥</div><div class="ut">拖拽 Excel 文件到这里</div><div class="ud">支持 .xlsx / .xls · 或点击选择文件 · 数据在你的电脑上读取，不会上传到任何服务器</div></div>
+          <input type="file" id="fInput" accept=".xlsx,.xls" class="hid" />
+          <div id="uErr" style="color:var(--er);font-size:12.5px;display:none;"></div>
+        </div></div>
+
+        <div class="cd hid" id="rcard"><div class="cd-h"><h3>📍 归属信息（用于省/市分类筛选）</h3></div><div class="cd-b">
+          <div class="note">系统会按「银行/支行」名自动匹配省/市；若未命中，请手填，提交后自动记入映射表。</div>
+          <div class="cg" style="margin-top:10px;">
+            <div class="cf"><label>银行/支行 *</label><input id="rBank" placeholder="如：苏州中行" /></div>
+            <div class="cf"><label>省份 *</label><input id="rProv" placeholder="如：江苏" /></div>
+            <div class="cf"><label>城市 *</label><input id="rCity" placeholder="如：苏州" /></div>
+          </div>
+        </div></div>
+
+        <div class="cd hid" id="mcard"><div class="cd-h"><h3>🔗 确认数据列（已自动识别，可手动调整）</h3></div><div class="cd-b">
+          <div class="cg" id="mGrid"></div>
+          <div style="margin-top:10px;">
+            <label style="font-size:11.5px;color:var(--g500);">
+              刷单风险 — 重复购买率阈值(%): <input type="number" id="cfgRpt" value="30" step="5" style="width:64px;padding:5px 7px;border:1px solid var(--g300);border-radius:6px;" />
+              &nbsp; 负利润且单用户最多下单≥ <input type="number" id="cfgMO" value="3" step="1" style="width:52px;padding:5px 7px;border:1px solid var(--g300);border-radius:6px;" /> 笔视为风险
+            </label>
+          </div>
+          <div class="arow"><button class="btn bp" id="doClean">① 清洗数据</button></div>
+          <div id="mErr" style="color:var(--er);font-size:12.5px;display:none;"></div>
+        </div></div>
+
+        <div class="cd hid" id="ccard"><div class="cd-h">
+          <h3>✅ 清洗结果预览 <span id="cBadge" class="badge b-ok"></span></h3>
+          <select id="cTypeSel" style="padding:5px 8px;border:1px solid var(--g300);border-radius:6px;font-size:11px;"></select>
+        </div><div class="cd-b">
+          <div class="pvw" id="cPreview"></div>
+          <div class="note">规则：剔除「类型为空」与「消费积分合计为0」的行；利润(分)=消费积分合计−成本价×购买数量；亏损行标红。金额单位由「分」转「元」展示。</div>
+          <div class="arow">
+            <button class="btn bs" id="doAnalyze">② 生成利润表与看板</button>
+            <button class="btn bg bsm" id="dlCln">⬇ 下载清洗表(.xlsx)</button>
+          </div>
+          <div id="anMsg" class="note" style="color:var(--ok);"></div>
+        </div></div>
+        <div id="opLog" class="note" style="margin:4px 0 10px;color:var(--g600);min-height:16px;"></div>
+      </div>
+
+      <!-- MAPPING -->
+      <div id="v-map" class="hid">
+        <div class="cd"><div class="cd-h"><h3>🗺️ 省/市映射表</h3><span class="fm">键=银行/支行名 → 省/市</span></div><div class="cd-b">
+          <div class="map-add">
+            <input id="mkBank" placeholder="银行/支行，如：苏州中行" />
+            <input id="mkProv" placeholder="省份，如：江苏" />
+            <input id="mkCity" placeholder="城市，如：苏州" />
+            <button class="btn bp bsm" id="mkAdd">＋ 添加</button>
+          </div>
+          <div class="note">上传文件时按「银行/支行」自动匹配省/市；新条目首次提交后自动记住。可在此增删改。</div>
+          <div class="cd-b" style="padding:14px 0 0;">
+            <table class="dt"><thead><tr><th>银行/支行</th><th>省份</th><th>城市</th><th>操作</th></tr></thead><tbody id="mapBody"></tbody></table>
+          </div>
+        </div></div>
+      </div>
+
+    </div><!-- /.ct -->
+  </main>
+</div>
+
+<!-- MODAL: 对已有文件重新清洗 -->
+<div class="mo" id="moMap">
+  <div class="md">
+    <div class="md-h"><h3>🔗 确认数据列 — <span id="moFN"></span></h3><button class="mc" onclick="closeMo()">✕</button></div>
+    <div class="md-b">
+      <div class="cg" id="moGrid"></div>
+      <div style="margin-top:10px;">
+        <label style="font-size:11.5px;color:var(--g500);">
+          重复购买率阈值(%): <input type="number" id="moRpt" value="30" step="5" style="width:64px;padding:5px 7px;border:1px solid var(--g300);border-radius:6px;" />
+          单用户最多下单≥ <input type="number" id="moMO" value="3" step="1" style="width:52px;padding:5px 7px;border:1px solid var(--g300);border-radius:6px;" />
+        </label>
+      </div>
+      <div id="moErr" style="color:var(--er);font-size:12.5px;display:none;"></div>
+    </div>
+    <div class="md-f"><button class="btn bg" onclick="closeMo()">取消</button><button class="btn bp" id="moCleanBtn">① 清洗数据</button></div>
+  </div>
+</div>
+
+<script src="libs/xlsx.full.min.js"></script>
+<script src="libs/echarts.min.js"></script>
+<script src="js/store.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/profit.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
