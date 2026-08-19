@@ -25,7 +25,7 @@
     await initDirHandle();
     const s = await Store.getSetting('project');
     if (s && s.value) { S.projectName = s.value; showMain(); }
-    else { hide('v-fl'); hide('v-up'); hide('v-map'); show('v-su'); }
+    else { hide('v-fl'); hide('v-up'); show('v-su'); }
   }
 
   function loadFirstLibs() {
@@ -39,12 +39,11 @@
     b.onclick = () => {
       document.querySelectorAll('.sbi').forEach(x => x.classList.remove('on'));
       b.classList.add('on');
-      ['files', 'upload', 'map'].forEach(v => hide('v-' + v));
+      ['files', 'upload'].forEach(v => hide('v-' + v));
       show('v-' + b.dataset.v);
-      $('pgT').textContent = { files: '文件管理', upload: '上传文件', map: '映射管理' }[b.dataset.v] || '';
-      if (b.dataset.v === 'map') loadMappingTable();
+      $('pgT').textContent = { files: '文件管理', upload: '上传文件' }[b.dataset.v] || '';
       if (b.dataset.v === 'files') renderFiles();
-      if (b.dataset.v === 'upload') renderSavePath();
+      if (b.dataset.v === 'upload') { renderSavePath(); loadMappingTable(); }
     };
   });
   $('gbUp').onclick = () => {
@@ -160,7 +159,10 @@
       await Store.putFile({ id: S.fid, name: file.name, project: S.projectName, province: S.province, city: S.city, bank: bank, uploadTime: Date.now(), rowCount: rows.length, status: 'raw', rawData: buf, headers: S.headers, map: S.map });
       const ok = $('uOk'); if (ok) { ok.textContent = '✅ 上传成功：' + file.name + '（' + rows.length + ' 行）' + (saveDirHandle ? (' · 已保存到文件夹「' + saveDirHandle.name + '」') : ' · 已触发下载'); show('uOk'); }
       const rc = $('rcard'); if (rc && rc.scrollIntoView) rc.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      document.querySelector('.sbi[data-v="upload"]').click(); show('v-up');
+      // 刷新文件管理列表 + 弹窗确认 + 跳转到文件管理页
+      await renderFiles(); await buildFilters();
+      alert('✅ 上传成功\n\n文件：' + file.name + '\n记录数：' + rows.length + (saveDirHandle ? ('\n已保存到文件夹：「' + saveDirHandle.name + '」') : '\n（未设置保存路径，已触发浏览器下载）'));
+      document.querySelector('.sbi[data-v="files"]').click();
     } catch (err) { $('uErr').textContent = '解析失败：' + err.message; show('uErr'); }
   }
 
@@ -349,8 +351,17 @@
     Dashboard.openDashboard(payload, ECHARTS_URL);
   };
   window.delFile = async function (fid) {
-    if (!confirm('确定删除该文件？关联的清洗/分析结果将一并清除（本机保存路径中的文件需手动删除）。')) return;
+    if (!confirm('确定删除该文件？关联的清洗/分析结果将一并清除。\n如果已设置保存路径，本机 .xlsx 原文件也会被一并删除。')) return;
+    const fi = await Store.getFile(fid);
+    let localDeleted = false, localErr = '';
+    if (fi && saveDirHandle && fi.name) {
+      try { await saveDirHandle.removeEntry(fi.name, { recursive: false }); localDeleted = true; }
+      catch (e) {
+        try { await saveDirHandle.removeEntry(fi.name); localDeleted = true; } catch (e2) { localErr = e2.name === 'NotFoundError' ? '未在本机文件夹中找到' : e2.message; }
+      }
+    }
     await Store.deleteFile(fid); renderFiles(); buildFilters();
+    if (localDeleted) alert('✅ 已删除：\n· 浏览器内的记录\n· 本机文件夹中的 .xlsx'); else if (localErr) alert('⚠️ 浏览器记录已删除，但本机文件删除失败：' + localErr);
   };
 
   // ---------------- 映射管理 ----------------
@@ -360,6 +371,12 @@
     if (!all.length) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--g400);padding:14px;text-align:center;">暂无映射，上传时自动记录或手动添加</td></tr>'; return; }
     tb.innerHTML = all.map(m => '<tr data-bank="' + esc(m.bank) + '"><td>' + esc(m.bank) + '</td><td>' + esc(m.province) + '</td><td>' + esc(m.city) + '</td><td><button class="btn bg bsm" style="color:var(--er);border-color:#fecaca;" onclick="delMapping(\'' + esc(m.bank) + '\')">删除</button></td></tr>').join('');
   }
+  if ($('mapHead')) $('mapHead').onclick = () => {
+    const b = $('mapBody2'), a = $('mapArrow'); if (!b) return;
+    const open = !b.classList.contains('hid');
+    if (open) { b.classList.add('hid'); if (a) a.textContent = '▼ 展开'; }
+    else { b.classList.remove('hid'); if (a) a.textContent = '▲ 收起'; }
+  };
   if ($('mkAdd')) $('mkAdd').onclick = async () => {
     const bank = $('mkBank').value.trim(), prov = $('mkProv').value.trim(), city = $('mkCity').value.trim();
     if (!bank || !prov || !city) { alert('银行/省份/城市均需填写'); return; }

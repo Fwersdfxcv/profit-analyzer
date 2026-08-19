@@ -14,7 +14,6 @@
     <nav class="sb-nav">
       <button class="sbi on" data-v="files"><span class="ic">📁</span> 文件管理</button>
       <button class="sbi" data-v="upload"><span class="ic">📤</span> 上传文件</button>
-      <button class="sbi" data-v="map"><span class="ic">🗺️</span> 映射管理</button>
     </nav>
     <div class="sb-ft">数据仅存于本机浏览器与所选文件夹 · 不上传任何服务器</div>
   </aside>
@@ -25,7 +24,7 @@
       <!-- SETUP -->
       <div id="v-su">
         <div class="cd"><div class="swiz">
-          <div class="si">🏦</div><h2>欢迎使用利润分析平台</h2>
+          <h2>欢迎使用利润分析平台</h2>
           <p>首次使用请先设置<strong>保存路径</strong>与<strong>项目名称</strong>。上传的 Excel 原文件、清洗表、利润表、看板都会自动存入该路径。</p>
           <div style="margin:18px 0 12px;background:var(--pb);border:1px solid var(--pl);border-radius:var(--rs);padding:14px 16px;text-align:left;">
             <div style="font-size:12px;font-weight:600;color:var(--g700);margin-bottom:6px;">💾 保存路径 <span id="suDirBadge" class="badge b-raw">⚠️ 未设置</span></div>
@@ -116,11 +115,8 @@
           <div id="anMsg" class="note" style="color:var(--ok);"></div>
         </div></div>
         <div id="opLog" class="note" style="margin:4px 0 10px;color:var(--g600);min-height:16px;"></div>
-      </div>
 
-      <!-- MAPPING -->
-      <div id="v-map" class="hid">
-        <div class="cd"><div class="cd-h"><h3>🗺️ 省/市映射表</h3><span class="fm">键=银行/支行名 → 省/市</span></div><div class="cd-b">
+        <div class="cd"><div class="cd-h" style="cursor:pointer;" id="mapHead"><h3>🗺️ 省/市映射表 <span class="fm">键=银行/支行名 → 省/市</span></h3><span id="mapArrow" style="color:var(--g400);font-size:12px;">▼ 展开</span></div><div class="cd-b hid" id="mapBody2">
           <div class="map-add">
             <input id="mkBank" placeholder="银行/支行，如：苏州中行" />
             <input id="mkProv" placeholder="省份，如：江苏" />
